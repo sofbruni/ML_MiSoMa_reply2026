@@ -1,0 +1,144 @@
+# FINAL DATA QUALITY REPORT
+
+Original dataset: attivazioniCessazioni.csv
+Final cleaned dataset: artifacts/final_cleaned_dataset.csv
+Reliability score: 0.00/100
+
+## TEAM AUDIT TRAIL
+
+### 1. Schema Validation
+- Input dataset: artifacts/working_attivazioniCessazioni.csv
+- Output dataset: artifacts/schema_validation_output.csv
+- Tasks executed:
+  - Checked column naming conventions
+  - Standardized invalid column names
+  - Applied safe numeric coercion on clearly numeric columns
+- Issues found:
+  - Invalid or inconsistent column name: _id
+  - Invalid or inconsistent column name: RATA
+  - Invalid or inconsistent column name: aggregation-time
+  - Invalid or inconsistent column name: Provincia Sede
+  - Invalid or inconsistent column name: CODICE ENTE
+  - Invalid or inconsistent column name: 3descrizione
+  - Invalid or inconsistent column name: regione%sede
+  - Invalid or inconsistent column name: att ivazioni
+- Changes applied:
+  - Renamed 8 columns to snake_case
+  - Coerced column to numeric: mese
+  - Coerced column to numeric: anno
+  - Coerced column to numeric: codice_ente
+  - Coerced column to numeric: regione_sede
+  - Coerced column to numeric: attivazioni
+  - Coerced column to numeric: cessazioni
+  - Coerced column to numeric: rata
+  - Coerced column to numeric: codice_ente_2
+  - Coerced column to numeric: regione_sede_2
+  - Coerced column to numeric: att_ivazioni
+- Changes not applied:
+  - No deferred schema actions
+- Handoff summary: Schema standardized. Cleaned dataset passed to Completeness Analysis.
+
+### 2. Completeness Analysis
+- Input dataset: artifacts/schema_validation_output.csv
+- Output dataset: artifacts/completeness_analysis_output.csv
+- Tasks executed:
+  - Detected null and placeholder values
+  - Standardized missing-value markers
+  - Flagged sparse columns
+- Issues found:
+  - Low completeness in column 'qualifica': 74.70%
+  - Low completeness in column 'note': 1.49%
+  - Low completeness in column 'fonte_dato': 0.80%
+- Changes applied:
+  - Standardized placeholder values to real nulls
+- Changes not applied:
+  - Sparse columns not dropped automatically: note, fonte_dato
+- Handoff summary: Missing markers standardized. Dataset passed to Consistency Validation.
+
+### 3. Consistency Validation
+- Input dataset: artifacts/completeness_analysis_output.csv
+- Output dataset: artifacts/consistency_validation_output.csv
+- Tasks executed:
+  - Trimmed whitespace in text columns
+  - Normalized repeated spaces
+  - Removed exact duplicate rows
+- Issues found:
+  - Formatting inconsistency found in column: descrizione_ente
+  - Formatting inconsistency found in column: provincia_sede
+  - Formatting inconsistency found in column: qualifica
+  - Formatting inconsistency found in column: note
+  - Formatting inconsistency found in column: fonte_dato
+  - Formatting inconsistency found in column: provincia_sede_2
+  - Detected 67 exact duplicate rows
+- Changes applied:
+  - Normalized text formatting in column: descrizione_ente
+  - Normalized text formatting in column: provincia_sede
+  - Normalized text formatting in column: qualifica
+  - Normalized text formatting in column: note
+  - Normalized text formatting in column: fonte_dato
+  - Normalized text formatting in column: provincia_sede_2
+  - Removed 67 exact duplicate rows
+- Changes not applied:
+  - No deferred consistency actions
+- Handoff summary: Formatting normalized and exact duplicates removed where safe. Dataset passed to Anomaly Detection.
+
+### 4. Anomaly Detection
+- Input dataset: artifacts/consistency_validation_output.csv
+- Output dataset: artifacts/anomaly_detection_output.csv
+- Tasks executed:
+  - Detected numeric outliers with IQR method
+  - Detected rare categorical values
+  - Added anomaly flag columns
+- Issues found:
+  - Outliers detected in 'mese': 1
+  - Outliers detected in 'anno': 340
+  - Outliers detected in 'codice_ente': 3752
+  - Outliers detected in 'regione_sede': 14
+  - Outliers detected in 'attivazioni': 3295
+  - Outliers detected in 'cessazioni': 3049
+  - Outliers detected in 'codice_ente_2': 3858
+  - Outliers detected in 'regione_sede_2': 10
+  - Outliers detected in 'att_ivazioni': 3292
+  - Rare values detected in 'id': 19989
+  - Rare values detected in 'descrizione_ente': 4
+  - Rare values detected in 'provincia_sede': 41
+  - Rare values detected in 'col_3descrizione': 4
+- Changes applied:
+  - Added anomaly flag column: mese_outlier_flag
+  - Added anomaly flag column: anno_outlier_flag
+  - Added anomaly flag column: codice_ente_outlier_flag
+  - Added anomaly flag column: regione_sede_outlier_flag
+  - Added anomaly flag column: attivazioni_outlier_flag
+  - Added anomaly flag column: cessazioni_outlier_flag
+  - Added anomaly flag column: codice_ente_2_outlier_flag
+  - Added anomaly flag column: regione_sede_2_outlier_flag
+  - Added anomaly flag column: att_ivazioni_outlier_flag
+- Changes not applied:
+  - Outliers were flagged, not automatically removed
+- Handoff summary: Anomalies flagged and dataset passed to Remediation.
+
+### 5. Remediation
+- Input dataset: artifacts/anomaly_detection_output.csv
+- Output dataset: artifacts/final_cleaned_dataset.csv
+- Tasks executed:
+  - Applied safe remediation actions
+  - Kept anomaly flags for auditability
+  - Prepared final cleaned dataset
+- Issues found:
+  - Used upstream issues for remediation
+- Changes applied:
+  - Filled low-rate missing numeric values in 'mese' with median
+  - Filled low-rate missing numeric values in 'anno' with median
+  - Filled low-rate missing numeric values in 'codice_ente' with median
+  - Filled low-rate missing numeric values in 'regione_sede' with median
+  - Filled low-rate missing numeric values in 'attivazioni' with median
+  - Filled low-rate missing numeric values in 'cessazioni' with median
+  - Filled low-rate missing numeric values in 'rata' with median
+  - Filled low-rate missing numeric values in 'att_ivazioni' with median
+- Changes not applied:
+  - No deferred remediation actions
+- Handoff summary: Final cleaned dataset created and returned to the super supervisor.
+
+## GLOBAL SUMMARY
+- Total issues tracked: 31
+- Total teams executed: 5

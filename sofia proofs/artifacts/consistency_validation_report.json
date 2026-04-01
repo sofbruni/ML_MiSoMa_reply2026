@@ -1,0 +1,32 @@
+{
+  "team_name": "Consistency Validation",
+  "input_dataset": "artifacts/completeness_analysis_output.csv",
+  "output_dataset": "artifacts/consistency_validation_output.csv",
+  "tasks_executed": [
+    "Trimmed whitespace in text columns",
+    "Normalized repeated spaces",
+    "Removed exact duplicate rows"
+  ],
+  "issues_found": [
+    "Formatting inconsistency found in column: descrizione_ente",
+    "Formatting inconsistency found in column: provincia_sede",
+    "Formatting inconsistency found in column: qualifica",
+    "Formatting inconsistency found in column: note",
+    "Formatting inconsistency found in column: fonte_dato",
+    "Formatting inconsistency found in column: provincia_sede_2",
+    "Detected 67 exact duplicate rows"
+  ],
+  "changes_applied": [
+    "Normalized text formatting in column: descrizione_ente",
+    "Normalized text formatting in column: provincia_sede",
+    "Normalized text formatting in column: qualifica",
+    "Normalized text formatting in column: note",
+    "Normalized text formatting in column: fonte_dato",
+    "Normalized text formatting in column: provincia_sede_2",
+    "Removed 67 exact duplicate rows"
+  ],
+  "changes_not_applied": [
+    "No deferred consistency actions"
+  ],
+  "handoff_summary": "Formatting normalized and exact duplicates removed where safe. Dataset passed to Anomaly Detection."
+}

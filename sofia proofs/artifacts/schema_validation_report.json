@@ -1,0 +1,37 @@
+{
+  "team_name": "Schema Validation",
+  "input_dataset": "artifacts/working_attivazioniCessazioni.csv",
+  "output_dataset": "artifacts/schema_validation_output.csv",
+  "tasks_executed": [
+    "Checked column naming conventions",
+    "Standardized invalid column names",
+    "Applied safe numeric coercion on clearly numeric columns"
+  ],
+  "issues_found": [
+    "Invalid or inconsistent column name: _id",
+    "Invalid or inconsistent column name: RATA",
+    "Invalid or inconsistent column name: aggregation-time",
+    "Invalid or inconsistent column name: Provincia Sede",
+    "Invalid or inconsistent column name: CODICE ENTE",
+    "Invalid or inconsistent column name: 3descrizione",
+    "Invalid or inconsistent column name: regione%sede",
+    "Invalid or inconsistent column name: att ivazioni"
+  ],
+  "changes_applied": [
+    "Renamed 8 columns to snake_case",
+    "Coerced column to numeric: mese",
+    "Coerced column to numeric: anno",
+    "Coerced column to numeric: codice_ente",
+    "Coerced column to numeric: regione_sede",
+    "Coerced column to numeric: attivazioni",
+    "Coerced column to numeric: cessazioni",
+    "Coerced column to numeric: rata",
+    "Coerced column to numeric: codice_ente_2",
+    "Coerced column to numeric: regione_sede_2",
+    "Coerced column to numeric: att_ivazioni"
+  ],
+  "changes_not_applied": [
+    "No deferred schema actions"
+  ],
+  "handoff_summary": "Schema standardized. Cleaned dataset passed to Completeness Analysis."
+}

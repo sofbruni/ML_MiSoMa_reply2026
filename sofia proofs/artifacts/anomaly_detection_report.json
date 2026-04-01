@@ -1,0 +1,40 @@
+{
+  "team_name": "Anomaly Detection",
+  "input_dataset": "artifacts/consistency_validation_output.csv",
+  "output_dataset": "artifacts/anomaly_detection_output.csv",
+  "tasks_executed": [
+    "Detected numeric outliers with IQR method",
+    "Detected rare categorical values",
+    "Added anomaly flag columns"
+  ],
+  "issues_found": [
+    "Outliers detected in 'mese': 1",
+    "Outliers detected in 'anno': 340",
+    "Outliers detected in 'codice_ente': 3752",
+    "Outliers detected in 'regione_sede': 14",
+    "Outliers detected in 'attivazioni': 3295",
+    "Outliers detected in 'cessazioni': 3049",
+    "Outliers detected in 'codice_ente_2': 3858",
+    "Outliers detected in 'regione_sede_2': 10",
+    "Outliers detected in 'att_ivazioni': 3292",
+    "Rare values detected in 'id': 19989",
+    "Rare values detected in 'descrizione_ente': 4",
+    "Rare values detected in 'provincia_sede': 41",
+    "Rare values detected in 'col_3descrizione': 4"
+  ],
+  "changes_applied": [
+    "Added anomaly flag column: mese_outlier_flag",
+    "Added anomaly flag column: anno_outlier_flag",
+    "Added anomaly flag column: codice_ente_outlier_flag",
+    "Added anomaly flag column: regione_sede_outlier_flag",
+    "Added anomaly flag column: attivazioni_outlier_flag",
+    "Added anomaly flag column: cessazioni_outlier_flag",
+    "Added anomaly flag column: codice_ente_2_outlier_flag",
+    "Added anomaly flag column: regione_sede_2_outlier_flag",
+    "Added anomaly flag column: att_ivazioni_outlier_flag"
+  ],
+  "changes_not_applied": [
+    "Outliers were flagged, not automatically removed"
+  ],
+  "handoff_summary": "Anomalies flagged and dataset passed to Remediation."
+}

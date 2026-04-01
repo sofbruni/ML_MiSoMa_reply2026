@@ -1,0 +1,22 @@
+{
+  "team_name": "Completeness Analysis",
+  "input_dataset": "artifacts/schema_validation_output.csv",
+  "output_dataset": "artifacts/completeness_analysis_output.csv",
+  "tasks_executed": [
+    "Detected null and placeholder values",
+    "Standardized missing-value markers",
+    "Flagged sparse columns"
+  ],
+  "issues_found": [
+    "Low completeness in column 'qualifica': 74.70%",
+    "Low completeness in column 'note': 1.49%",
+    "Low completeness in column 'fonte_dato': 0.80%"
+  ],
+  "changes_applied": [
+    "Standardized placeholder values to real nulls"
+  ],
+  "changes_not_applied": [
+    "Sparse columns not dropped automatically: note, fonte_dato"
+  ],
+  "handoff_summary": "Missing markers standardized. Dataset passed to Consistency Validation."
+}
