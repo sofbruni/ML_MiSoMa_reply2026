@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(mkdir -p \"C:/Users/sebas/OneDrive - LUISS Libera Università Internazionale degli Studi Sociali Guido Carli/Documenti/GitHub/ML_MiSoMa_reply2026/data_quality/tools\")",
+      "Bash(mkdir -p \"C:/Users/sebas/OneDrive - LUISS Libera Università Internazionale degli Studi Sociali Guido Carli/Documenti/GitHub/ML_MiSoMa_reply2026/data_quality/teams\")",
+      "Bash(pip install:*)"
+    ]
+  }
+}
