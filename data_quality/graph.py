@@ -1,17 +1,20 @@
 """
 Top-level hierarchical graph
 ────────────────────────────
+Profiler (dataset profile detection — pure pandas, no LLM)
+  ↓
 Top Supervisor
- ├── call_schema_team       → schema_graph     → apply_schema_fixes()
- ├── call_completeness_team → completeness_graph → apply_completeness_fixes()
- ├── call_consistency_team  → consistency_graph  → apply_consistency_fixes()
+ ├── call_schema_team       → schema_graph     → apply_schema_fixes(profile)
+ ├── call_completeness_team → completeness_graph → apply_completeness_fixes(profile)
+ ├── call_consistency_team  → consistency_graph  → apply_consistency_fixes(profile)
  ├── call_anomaly_team      → anomaly_graph      (no CSV changes — detection only)
  └── call_remediation_team  → remediation_graph  → build_final_report()
 
 Each team node:
   1. Invokes the compiled team subgraph with the current working_dataset_path
+     AND the dataset profile embedded in the initial message
   2. Extracts the last AI message (findings summary) from the subgraph response
-  3. Calls the corresponding fix function to produce the next working CSV
+  3. Calls the corresponding fix function (passing the profile) to produce the next CSV
   4. Updates working_dataset_path in the parent state
   5. Returns to the top supervisor
 """
@@ -19,6 +22,7 @@ Each team node:
 import json
 import os
 import re
+import shutil
 from datetime import date
 from pathlib import Path
 from typing import Literal
@@ -35,6 +39,8 @@ from data_quality.teams.completeness_team import completeness_graph
 from data_quality.teams.consistency_team import consistency_graph
 from data_quality.teams.anomaly_team import anomaly_graph
 from data_quality.teams.remediation_team import remediation_graph
+from data_quality.tools.profiler import profile_dataset
+from data_quality.tools.semantic_enricher import enrich_profile
 from data_quality.tools.schema_tools import apply_schema_fixes
 from data_quality.tools.completeness_tools import apply_completeness_fixes
 from data_quality.tools.consistency_tools import apply_consistency_fixes
@@ -59,8 +65,17 @@ def _versioned_path(original_path: str, version: int) -> str:
     return str(p.parent / f"{p.stem}_v{version}{p.suffix}")
 
 
-def _team_initial_message(working_path: str, task: str) -> list[dict]:
-    return [{"role": "user", "content": f"{task}\n\nDataset path: {working_path}"}]
+def _team_initial_message(working_path: str, task: str, profile: dict | None = None) -> list[dict]:
+    """Build the initial user message for a team subgraph.
+
+    The dataset profile is embedded as JSON so worker agents know what columns
+    exist and what their semantic types are, without hardcoding anything.
+    """
+    content = f"{task}\n\nDataset path: {working_path}"
+    if profile:
+        profile_json = json.dumps(profile, ensure_ascii=False)
+        content += f"\n\nDataset profile (column names and semantic types):\n{profile_json}"
+    return [{"role": "user", "content": content}]
 
 
 def _extract_text(content) -> str:
@@ -74,6 +89,14 @@ def _extract_text(content) -> str:
             if isinstance(part, dict) and part.get("type") == "text"
         )
     return str(content)
+
+
+def _collect_team_summary(result: dict) -> str:
+    """Collect and concatenate all worker HumanMessages from a team result."""
+    worker_msgs = [m for m in result["messages"] if isinstance(m, HumanMessage) and m.name]
+    if worker_msgs:
+        return "\n\n---\n\n".join(_extract_text(m.content) for m in worker_msgs)
+    return _extract_text(result["messages"][-1].content)
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +204,41 @@ def _build_markdown(report: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Profiler node
+# ---------------------------------------------------------------------------
+
+def run_profiler(state: DataQualityState) -> dict:
+    """Profiles the dataset once before the supervisor starts.
+    Detects column semantic types via pandas heuristics (no LLM).
+    Stores the profile in state — does NOT add to message history so the
+    supervisor sees only the original task request and routes correctly.
+    """
+    prof = profile_dataset(state["original_dataset_path"])
+    col_summary = ", ".join(
+        f"{c}: {v['semantic_type']}" for c, v in prof["columns"].items()
+    )
+    print(f"  Columns: {col_summary}")
+    return {"dataset_profile": prof}
+
+
+def run_semantic_enricher(state: DataQualityState) -> dict:
+    """Single LLM call that reads column names + sample values and assigns
+    intended semantic types and fix actions. Enriches dataset_profile in-place.
+    Never crashes the pipeline — returns empty enrichments on failure.
+    """
+    prof = state["dataset_profile"]
+    enrichments = enrich_profile(prof, llm)
+    if enrichments:
+        print(f"  Semantic enrichments: {list(enrichments.keys())}")
+        for col, enr in enrichments.items():
+            print(f"    {col}: {enr['fix_action']}({enr['params']}) — {enr['notes']}")
+    else:
+        print("  Semantic enrichments: none")
+    updated_profile = {**prof, "enrichments": enrichments}
+    return {"dataset_profile": updated_profile}
+
+
+# ---------------------------------------------------------------------------
 # Top supervisor
 # ---------------------------------------------------------------------------
 
@@ -221,18 +279,17 @@ top_supervisor = make_top_supervisor()
 
 def call_schema_team(state: DataQualityState) -> Command[Literal["top_supervisor"]]:
     path = state["working_dataset_path"]
+    profile = state["dataset_profile"]
     result = schema_graph.invoke({
         "messages": _team_initial_message(
             path,
-            "Perform schema validation: check data types and naming conventions."
+            "Perform schema validation: check data types and naming conventions.",
+            profile,
         )
     })
-    summary = _extract_text(result["messages"][-1].content)
-
-    # Apply fixes → produce v1
+    summary = _collect_team_summary(result)
     out_path = _versioned_path(state["original_dataset_path"], 1)
-    fix_result = apply_schema_fixes(path, out_path)
-
+    fix_result = apply_schema_fixes(path, out_path, profile)
     report_msg = (
         f"[Schema Team] Findings:\n{summary}\n\n"
         f"Fixes applied: {fix_result['fixes_applied']}\n"
@@ -249,17 +306,17 @@ def call_schema_team(state: DataQualityState) -> Command[Literal["top_supervisor
 
 def call_completeness_team(state: DataQualityState) -> Command[Literal["top_supervisor"]]:
     path = state["working_dataset_path"]
+    profile = state["dataset_profile"]
     result = completeness_graph.invoke({
         "messages": _team_initial_message(
             path,
-            "Perform completeness analysis: detect nulls, calculate rates, find sparse columns."
+            "Perform completeness analysis: detect nulls, calculate rates, find sparse columns.",
+            profile,
         )
     })
-    summary = _extract_text(result["messages"][-1].content)
-
+    summary = _collect_team_summary(result)
     out_path = _versioned_path(state["original_dataset_path"], 2)
-    fix_result = apply_completeness_fixes(path, out_path)
-
+    fix_result = apply_completeness_fixes(path, out_path, profile)
     report_msg = (
         f"[Completeness Team] Findings:\n{summary}\n\n"
         f"Fixes applied: {fix_result['fixes_applied']}\n"
@@ -276,17 +333,17 @@ def call_completeness_team(state: DataQualityState) -> Command[Literal["top_supe
 
 def call_consistency_team(state: DataQualityState) -> Command[Literal["top_supervisor"]]:
     path = state["working_dataset_path"]
+    profile = state["dataset_profile"]
     result = consistency_graph.invoke({
         "messages": _team_initial_message(
             path,
-            "Perform consistency validation: check formats, cross-column logic, and duplicates."
+            "Perform consistency validation: check formats, cross-column logic, and duplicates.",
+            profile,
         )
     })
-    summary = _extract_text(result["messages"][-1].content)
-
+    summary = _collect_team_summary(result)
     out_path = _versioned_path(state["original_dataset_path"], 3)
-    fix_result = apply_consistency_fixes(path, out_path)
-
+    fix_result = apply_consistency_fixes(path, out_path, profile)
     report_msg = (
         f"[Consistency Team] Findings:\n{summary}\n\n"
         f"Fixes applied: {fix_result['fixes_applied']}\n"
@@ -303,13 +360,15 @@ def call_consistency_team(state: DataQualityState) -> Command[Literal["top_super
 
 def call_anomaly_team(state: DataQualityState) -> Command[Literal["top_supervisor"]]:
     path = state["working_dataset_path"]
+    profile = state["dataset_profile"]
     result = anomaly_graph.invoke({
         "messages": _team_initial_message(
             path,
-            "Perform anomaly detection: identify numerical outliers and rare categorical values."
+            "Perform anomaly detection: identify numerical outliers and rare categorical values.",
+            profile,
         )
     })
-    summary = _extract_text(result["messages"][-1].content)
+    summary = _collect_team_summary(result)
 
     # Anomaly team: detection only, no CSV modification
     report_msg = f"[Anomaly Team] Findings:\n{summary}"
@@ -323,7 +382,7 @@ def call_anomaly_team(state: DataQualityState) -> Command[Literal["top_superviso
 
 
 def call_remediation_team(state: DataQualityState) -> Command[Literal["top_supervisor"]]:
-    import shutil
+
 
     # Collect all team findings from message history
     team_names = ("schema_team", "completeness_team", "consistency_team", "anomaly_team")
@@ -333,16 +392,21 @@ def call_remediation_team(state: DataQualityState) -> Command[Literal["top_super
             findings[m.name] = _extract_text(m.content)
 
     all_findings_text = "\n\n".join(findings.values())
-    findings_payload = json.dumps({"all_findings_text": all_findings_text})
+    # Include dataset-level metadata so scoring can scale per-column deductions
+    findings_payload = json.dumps({
+        "all_findings_text": all_findings_text,
+        "column_count": len(state["dataset_profile"].get("columns", {})),
+        "row_count": state["dataset_profile"].get("row_count", 0),
+    })
 
     result = remediation_graph.invoke({
         "messages": _team_initial_message(
             findings_payload,
             "Generate correction suggestions and compute the reliability score "
-            "based on all findings above."
+            "based on all findings above.",
         )
     })
-    summary = _extract_text(result["messages"][-1].content)
+    summary = _collect_team_summary(result)
     findings["remediation_team"] = summary
 
     # Save final cleaned CSV
@@ -358,12 +422,13 @@ def call_remediation_team(state: DataQualityState) -> Command[Literal["top_super
         "findings": findings,
     }
     data_dir = Path(state["original_dataset_path"]).parent
-    json_path = data_dir / "quality_report.json"
+    stem = Path(state["original_dataset_path"]).stem  # e.g. "spesa" or "attivazioniCessazioni"
+    json_path = data_dir / f"{stem}_quality_report.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 
     # Build and save Markdown report
-    md_path = data_dir / "quality_report.md"
+    md_path = data_dir / f"{stem}_quality_report.md"
     md_path.write_text(_build_markdown(report), encoding="utf-8")
 
     report_msg = (
@@ -388,6 +453,8 @@ def call_remediation_team(state: DataQualityState) -> Command[Literal["top_super
 def build_graph():
     builder = StateGraph(DataQualityState)
 
+    builder.add_node("profiler", run_profiler)
+    builder.add_node("semantic_enricher", run_semantic_enricher)
     builder.add_node("top_supervisor", top_supervisor)
     builder.add_node("schema_team", call_schema_team)
     builder.add_node("completeness_team", call_completeness_team)
@@ -395,7 +462,9 @@ def build_graph():
     builder.add_node("anomaly_team", call_anomaly_team)
     builder.add_node("remediation_team", call_remediation_team)
 
-    builder.add_edge(START, "top_supervisor")
+    builder.add_edge(START, "profiler")
+    builder.add_edge("profiler", "semantic_enricher")
+    builder.add_edge("semantic_enricher", "top_supervisor")
 
     return builder.compile()
 

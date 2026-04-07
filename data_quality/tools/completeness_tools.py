@@ -15,7 +15,7 @@ from data_quality.config import PLACEHOLDER_VALUES
 def _load_with_placeholders_as_nan(path: str) -> pd.DataFrame:
     """Load CSV and replace all known placeholder strings with NaN."""
     df = pd.read_csv(path, dtype=str)
-    return df.replace(list(PLACEHOLDER_VALUES), pd.NA)
+    return df.replace(list(PLACEHOLDER_VALUES), pd.NA).infer_objects(copy=False)
 
 
 @tool
@@ -88,44 +88,54 @@ def detect_sparse_columns(dataset_path: str, threshold: float = 0.5) -> str:
 # Fix function (called by the completeness team node, not by the LLM)
 # ---------------------------------------------------------------------------
 
-def apply_completeness_fixes(input_path: str, output_path: str) -> dict:
+def apply_completeness_fixes(input_path: str, output_path: str, profile: dict) -> dict:
     """
-    Applies completeness corrections:
-      1. Replaces placeholder strings with NaN
-      2. Drops columns that are >95% empty (note/fonte_dato)
-      3. Fills numeric columns with their median
-      4. Fills categorical columns with 'Unknown'
-    Returns a summary dict.
+    Deterministic completeness fixes:
+      1. Replace known placeholder strings with NaN.
+      2. Drop columns that are >95% empty (ultra-sparse).
+      3. Fill numeric columns with their median (skips if median is NaN or column no longer numeric).
+      4. Fill remaining string columns with 'Unknown'.
     """
     df = pd.read_csv(input_path, dtype=str)
+    n = len(df)
     changes = []
 
-    # 1. Replace placeholders with NaN
+    # 1. Placeholder → NaN
     before_nulls = int(df.isna().sum().sum())
-    df = df.replace(list(PLACEHOLDER_VALUES), pd.NA)
+    df = df.replace(list(PLACEHOLDER_VALUES), pd.NA).infer_objects(copy=False)
     after_nulls = int(df.isna().sum().sum())
     if after_nulls > before_nulls:
         changes.append(f"Converted {after_nulls - before_nulls} placeholder strings to NaN")
 
-    # 2. Drop columns >95% empty
-    n = len(df)
+    # 2. Drop ultra-sparse columns (>95% missing)
     ultra_sparse = [c for c in df.columns if df[c].isna().sum() / n > 0.95]
     if ultra_sparse:
         df = df.drop(columns=ultra_sparse)
-        changes.append(f"Dropped ultra-sparse columns (>95% missing): {ultra_sparse}")
+        changes.append(f"Dropped ultra-sparse columns (>95% empty): {ultra_sparse}")
 
-    # 3. Coerce numeric columns and fill with median
-    numeric_cols = ["spesa", "ente", "cod_imposta", "cod_tipoimposta"]
+    # 3. Fill numeric columns with median
+    col_profiles = profile.get("columns", {})
+    numeric_cols = [
+        c for c, v in col_profiles.items()
+        if v.get("semantic_type") == "numeric" and c in df.columns
+    ]
     for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-            if df[col].isna().any():
-                median_val = df[col].median()
-                filled = int(df[col].isna().sum())
-                df[col] = df[col].fillna(median_val)
-                changes.append(f"Filled {filled} nulls in '{col}' with median ({median_val:.2f})")
+        non_null = df[col].dropna()
+        if len(non_null) == 0:
+            continue
+        # Guard: column may no longer be numeric after schema fixes
+        if pd.to_numeric(non_null, errors="coerce").notna().mean() < 0.5:
+            continue
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+        if df[col].isna().any():
+            median_val = df[col].median()
+            if pd.isna(median_val):
+                continue
+            filled = int(df[col].isna().sum())
+            df[col] = df[col].fillna(median_val)
+            changes.append(f"Filled {filled} nulls in '{col}' with median ({median_val})")
 
-    # 4. Fill remaining string columns with 'Unknown'
+    # 4. Fill string columns with 'Unknown'
     string_cols = df.select_dtypes(include=["object", "string"]).columns
     for col in string_cols:
         null_count = int(df[col].isna().sum())
@@ -133,5 +143,12 @@ def apply_completeness_fixes(input_path: str, output_path: str) -> dict:
             df[col] = df[col].fillna("Unknown")
             changes.append(f"Filled {null_count} nulls in '{col}' with 'Unknown'")
 
-    df.to_csv(output_path, index=False)
+    # 5. Coerce whole-number numeric columns to Int64 (avoids .0 suffix in CSV output).
+    for col in df.select_dtypes(include=["float64", "Float64"]).columns:
+        series = df[col]
+        non_null = series.dropna()
+        if len(non_null) > 0 and (non_null % 1 == 0).all():
+            df[col] = series.apply(lambda x: int(x) if pd.notna(x) else pd.NA).astype("Int64")
+
+    df.to_csv(output_path, index=False, encoding="utf-8")
     return {"fixes_applied": changes, "output_path": output_path}

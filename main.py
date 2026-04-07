@@ -2,7 +2,9 @@
 Entry point for the Data Quality Multi-Agent System.
 
 Usage:
-    python main.py
+    python main.py                                  # defaults to data/spesa.csv
+    python main.py data/attivazioniCessazioni.csv   # any CSV
+    python main.py /absolute/path/to/dataset.csv
 
 Set your API key either in a .env file:
     GOOGLE_API_KEY=your_key_here
@@ -11,15 +13,38 @@ Or export it before running:
     export GOOGLE_API_KEY=your_key_here
 """
 
+import argparse
 import os
+import sys
 from pathlib import Path
 from langchain_core.messages import HumanMessage
 from data_quality.graph import graph
 
-DATASET_PATH = (
-    r"C:\Users\sebas\OneDrive - LUISS Libera Università Internazionale degli Studi Sociali Guido Carli"
-    r"\Documenti\GitHub\ML_MiSoMa_reply2026\data\spesa.csv"
-)
+# Force UTF-8 output on Windows (prevents UnicodeEncodeError for ≥, →, etc.)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
+def _resolve_dataset_path() -> str:
+    parser = argparse.ArgumentParser(description="Data Quality Multi-Agent System")
+    parser.add_argument(
+        "dataset",
+        nargs="?",
+        default=None,
+        help="Path to the CSV dataset to analyse (default: attivazioniCessazioni.csv in data/ folder)",
+    )
+    args = parser.parse_args()
+
+    if args.dataset:
+        path = Path(args.dataset)
+    else:
+        path = Path(__file__).parent / "data" / "spesa.csv"
+
+    if not path.exists():
+        print(f"ERROR: Dataset not found at '{path}'")
+        sys.exit(1)
+
+    return str(path.resolve())
 
 
 def run_pipeline(dataset_path: str) -> dict:
@@ -45,6 +70,7 @@ def run_pipeline(dataset_path: str) -> dict:
         ],
         "original_dataset_path": dataset_path,
         "working_dataset_path": dataset_path,
+        "dataset_profile": {},   # populated by profiler node before pipeline starts
     }
 
     for step in graph.stream(initial_state, stream_mode="updates"):
@@ -69,7 +95,8 @@ def run_pipeline(dataset_path: str) -> dict:
 
     print("=" * 70)
     print("  PIPELINE COMPLETE")
-    print("  Reports saved to data/quality_report.json and data/quality_report.md")
+    stem = Path(dataset_path).stem
+    print(f"  Reports saved to data/{stem}_quality_report.json and data/{stem}_quality_report.md")
     print("=" * 70)
 
     return {"status": "completed", "original_path": dataset_path}
@@ -81,4 +108,5 @@ if __name__ == "__main__":
         print("  export GOOGLE_API_KEY=your_key_here")
         print("  or add it to a .env file in the project root.\n")
 
-    run_pipeline(DATASET_PATH)
+    dataset_path = _resolve_dataset_path()
+    run_pipeline(dataset_path)

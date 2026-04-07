@@ -4,7 +4,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv()
 
-# Verify/update this model name with a valid Google AI model
 MODEL_NAME = "gemini-3.1-flash-lite-preview"
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "YOUR_API_KEY_HERE")
 

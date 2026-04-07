@@ -102,7 +102,8 @@ def generate_correction_suggestions(findings_json: str) -> str:
 @tool
 def calculate_reliability_score(findings_json: str) -> str:
     """Compute a 0–100 reliability score from the aggregated findings.
-    Deductions are applied per type of issue found. Returns JSON with the score and breakdown."""
+    Per-column deductions are scaled by dataset width so wide datasets are not
+    over-penalised relative to narrow ones. Returns JSON with the score and breakdown."""
     try:
         findings = json.loads(findings_json)
     except json.JSONDecodeError:
@@ -111,20 +112,32 @@ def calculate_reliability_score(findings_json: str) -> str:
     score = 100.0
     deductions = []
 
-    # Schema deductions
+    # Scale per-column deductions for wide datasets (baseline = 10 columns)
+    column_count = findings.get("column_count", 10)
+    col_scale = min(10 / max(column_count, 1), 1.0)
+
+    def _count(val) -> int:
+        """Accept either a dict/list (return len) or an int/float (return as int)."""
+        if isinstance(val, (dict, list)):
+            return len(val)
+        if isinstance(val, (int, float)):
+            return int(val)
+        return 0
+
+    # Schema deductions (per-column → scaled)
     schema = findings.get("schema", {})
-    n_type_issues = len(schema.get("type_issues", {}))
-    n_naming = len(schema.get("naming_issues", {})) + len(schema.get("duplicate_columns", {}))
+    n_type_issues = _count(schema.get("type_issues", {}))
+    n_naming = _count(schema.get("naming_issues", {})) + _count(schema.get("duplicate_columns", {}))
     if n_type_issues:
-        d = min(n_type_issues * 3, 15)
+        d = round(min(n_type_issues * 3 * col_scale, 15), 1)
         score -= d
         deductions.append(f"-{d} pts: {n_type_issues} data-type issue(s)")
     if n_naming:
-        d = min(n_naming * 1, 5)
+        d = round(min(n_naming * 1 * col_scale, 5), 1)
         score -= d
         deductions.append(f"-{d} pts: {n_naming} naming/duplicate column issue(s)")
 
-    # Completeness deductions
+    # Completeness deductions (global → not scaled)
     completeness = findings.get("completeness", {})
     overall_pct = completeness.get("overall_completeness_pct", 100)
     missing_penalty = round((100 - overall_pct) * 0.5, 1)
@@ -132,13 +145,13 @@ def calculate_reliability_score(findings_json: str) -> str:
         score -= missing_penalty
         deductions.append(f"-{missing_penalty} pts: overall completeness {overall_pct}%")
 
-    # Consistency deductions
+    # Consistency deductions (format issues scaled; duplicates global)
     consistency = findings.get("consistency", {})
-    n_fmt = len(consistency.get("format_issues", {}))
-    n_cross = len(consistency.get("cross_column_issues", {}))
+    n_fmt = _count(consistency.get("format_issues", {}))
+    n_cross = _count(consistency.get("cross_column_issues", {}))
     n_dupes = consistency.get("duplicate_issues", {}).get("exact_duplicates", {}).get("count", 0)
     if n_fmt:
-        d = min(n_fmt * 3, 10)
+        d = round(min(n_fmt * 3 * col_scale, 10), 1)
         score -= d
         deductions.append(f"-{d} pts: {n_fmt} format inconsistency issue(s)")
     if n_cross:
@@ -149,7 +162,7 @@ def calculate_reliability_score(findings_json: str) -> str:
         score -= d
         deductions.append(f"-{d} pts: {n_dupes} duplicate rows")
 
-    # Anomaly deductions
+    # Anomaly deductions (global → not scaled)
     anomaly = findings.get("anomaly", {})
     for col, info in anomaly.get("numerical_outliers", {}).items():
         n_out = info.get("iqr_outliers", {}).get("count", 0)
