@@ -71,6 +71,14 @@ def run_pipeline(dataset_path: str) -> dict:
         "original_dataset_path": dataset_path,
         "working_dataset_path": dataset_path,
         "dataset_profile": {},   # populated by profiler node before pipeline starts
+        "completed_teams": [],
+        "skipped_teams": [],
+        "last_completed_team": "",
+        "iteration_count": 0,
+        "rows_removed": 0,
+        "rows_removed_last_team": 0,
+        "types_changed_count": 0,
+        "supervisor_decisions": [],
     }
 
     for step in graph.stream(initial_state, stream_mode="updates"):

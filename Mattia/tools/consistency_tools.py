@@ -291,13 +291,11 @@ def check_cross_column_logic(dataset_path: str) -> str:
         if len(negative) == 0:
             continue
         keyword_match = any(kw in col.lower() for kw in _AMOUNT_KEYWORDS)
-        issue_detail = (
-            "FINANCIAL KEYWORD MATCH — expected non-negative"
-            if keyword_match
-            else "numeric column with unexpected negatives"
-        )
         issues[col] = {
-            "problem": f"Negative values in '{col}' ({issue_detail})",
+            "problem": (
+                f"Negative values in '{col}' "
+                f"({'FINANCIAL KEYWORD MATCH — expected non-negative' if keyword_match else 'numeric column with unexpected negatives'})"
+            ),
             "priority": "HIGH" if keyword_match else "MODERATE",
             "count": int(len(negative)),
             "pct_of_rows": round(len(negative) / len(df) * 100, 2),

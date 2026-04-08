@@ -7,16 +7,20 @@ Workers run in fixed sequence (deterministic edges — no LLM supervisor needed)
 """
 
 from langgraph.prebuilt import create_react_agent
-from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import HumanMessage
+from langgraph.graph import StateGraph, MessagesState, START, END
 
 from data_quality.config import get_llm
-from data_quality.teams.common import TeamState, run_worker
 from data_quality.tools.remediation_tools import (
     generate_correction_suggestions,
     calculate_reliability_score,
 )
 
 llm = get_llm()
+
+
+class TeamState(MessagesState):
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -117,12 +121,27 @@ scorer_agent = create_react_agent(
     name="reliability_scorer",
 )
 
+# ---------------------------------------------------------------------------
+# Worker node wrappers (plain dict return — edges handle routing)
+# ---------------------------------------------------------------------------
+
+def _task_only(state: TeamState) -> dict:
+    """Return only the first (task) message so agents don't get confused by prior outputs."""
+    return {"messages": state["messages"][:1]}
+
+
 def suggester_node(state: TeamState) -> dict:
-    return run_worker(suggester_agent, state, "correction_suggester")
+    result = suggester_agent.invoke(_task_only(state))
+    return {"messages": [HumanMessage(
+        content=result["messages"][-1].content, name="correction_suggester"
+    )]}
 
 
 def scorer_node(state: TeamState) -> dict:
-    return run_worker(scorer_agent, state, "reliability_scorer")
+    result = scorer_agent.invoke(_task_only(state))
+    return {"messages": [HumanMessage(
+        content=result["messages"][-1].content, name="reliability_scorer"
+    )]}
 
 
 # ---------------------------------------------------------------------------
